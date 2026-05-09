@@ -13,6 +13,7 @@ from pyubx2 import UBXReader
 logger = logging.getLogger(__name__)
 
 GNSS_NAMES = {0: "GPS", 1: "SBAS", 2: "Galileo", 3: "BeiDou", 4: "IMES", 5: "QZSS", 6: "GLONASS"}
+_GNSS_ID_BY_NAME = {v: k for k, v in GNSS_NAMES.items()}
 
 # UBX messages to poll each cycle
 _POLL_MSGS: list[tuple[int, int]] = [
@@ -20,6 +21,8 @@ _POLL_MSGS: list[tuple[int, int]] = [
     (0x01, 0x35),  # NAV-SAT
     (0x01, 0x03),  # NAV-STATUS
     (0x0A, 0x38),  # MON-RF
+    (0x27, 0x09),  # SEC-SIG  (hardware jamming/spoofing state + per-frequency)
+    (0x01, 0x43),  # NAV-SIG  (per-signal C/N0 + OSNMA auth status)
 ]
 
 
@@ -58,6 +61,8 @@ class GNSSCollector:
         self._current_pvt: dict | None = None
         self._current_sat: list[dict] = []
         self._current_rf: list[dict] = []
+        self._current_sec_sig: dict | None = None
+        self._current_signals: list[dict] = []
 
     def start(self) -> None:
         self._running = True
@@ -121,6 +126,54 @@ class GNSSCollector:
             })
         return satellites
 
+    def _parse_sec_sig(self, msg) -> dict:
+        ts = datetime.now(tz=timezone.utc).isoformat()
+        n = int(getattr(msg, "jamNumCentFreqs", 0) or 0)
+        freqs = []
+        for i in range(1, n + 1):
+            sfx = f"_{i:02d}"
+            freq_khz = int(getattr(msg, f"centFreq{sfx}", 0) or 0)
+            freqs.append({
+                "freq_khz": freq_khz,
+                "freq_mhz": round(freq_khz / 1000.0, 3),
+                "jammed": int(getattr(msg, f"jammed{sfx}", 0) or 0),
+            })
+        return {
+            "timestamp": ts,
+            "jamming_state": int(getattr(msg, "jammingState", 0) or 0),
+            "spoofing_state": int(getattr(msg, "spoofingState", 0) or 0),
+            "jam_det_enabled": int(getattr(msg, "jamDetEnabled", 0) or 0),
+            "spf_det_enabled": int(getattr(msg, "spfDetEnabled", 0) or 0),
+            "frequencies": freqs,
+        }
+
+    def _parse_nav_sig(self, msg) -> list[dict]:
+        ts = datetime.now(tz=timezone.utc).isoformat()
+        n = int(getattr(msg, "numSigs", 0) or 0)
+        signals = []
+        for i in range(1, n + 1):
+            sfx = f"_{i:02d}"
+            quality = int(getattr(msg, f"qualityInd{sfx}", 0) or 0)
+            if quality < 4:  # skip signals not code+carrier locked
+                continue
+            raw_gnss = getattr(msg, f"gnssId{sfx}", 0)
+            try:
+                gnss_id = int(raw_gnss)
+            except (TypeError, ValueError):
+                gnss_id = _GNSS_ID_BY_NAME.get(str(raw_gnss), 0)
+            signals.append({
+                "timestamp": ts,
+                "gnss_id": gnss_id,
+                "sv_id": int(getattr(msg, f"svId{sfx}", 0) or 0),
+                "sig_id": str(getattr(msg, f"sigId{sfx}", "") or ""),
+                "cno_dbhz": float(getattr(msg, f"cno{sfx}", 0) or 0),
+                "quality_ind": quality,
+                "health": int(getattr(msg, f"health{sfx}", 0) or 0),
+                "pr_used": int(getattr(msg, f"prUsed{sfx}", 0) or 0),
+                "auth_status": int(getattr(msg, f"authStatus{sfx}", 0) or 0),
+            })
+        return signals
+
     def _parse_rf(self, msg) -> list[dict]:
         # Confirmed field names from pyubx2 1.3.0 on ZED-X20P:
         # jammingState_01, agcCnt_01, noisePerMS_01, jamInd_01, blockId_01
@@ -148,6 +201,8 @@ class GNSSCollector:
             "pvt": self._current_pvt,
             "satellites": list(self._current_sat),
             "rf": list(self._current_rf),
+            "sec_sig": self._current_sec_sig,
+            "signals": list(self._current_signals),
         }
         try:
             self.on_sample(sample)
@@ -197,6 +252,13 @@ class GNSSCollector:
                     spoof = (flags >> 3) & 0x03
                 if self._current_pvt is not None:
                     self._current_pvt["spoof_det_state"] = int(spoof)
+            elif identity == "SEC-SIG":
+                self._current_sec_sig = self._parse_sec_sig(parsed)
+                # SEC-SIG spoofingState/jammingState are authoritative — propagate to PVT
+                if self._current_pvt is not None and self._current_sec_sig:
+                    self._current_pvt["spoof_det_state"] = self._current_sec_sig["spoofing_state"]
+            elif identity == "NAV-SIG":
+                self._current_signals = self._parse_nav_sig(parsed)
 
     def _run(self) -> None:
         while self._running:

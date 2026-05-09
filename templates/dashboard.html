@@ -84,6 +84,22 @@
   </div>
 </div>
 
+<!-- SEC-SIG + OSNMA Row -->
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="card metric-card p-3">
+      <div class="metric-label mb-2">Signal Security — SEC-SIG</div>
+      <div id="sec-sig-panel"><span class="text-muted small">Waiting…</span></div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card metric-card p-3">
+      <div class="metric-label mb-2">OSNMA Authentication <span class="text-muted small">(Galileo)</span></div>
+      <div id="osnma-panel"><span class="text-muted small">Waiting…</span></div>
+    </div>
+  </div>
+</div>
+
 <!-- Position + Baseline Controls -->
 <div class="row g-3">
   <div class="col-md-6">
@@ -219,6 +235,52 @@ socket.on('update', (d) => {
         </strong> — ${e.attribution}
         <span class="ms-2 small text-muted">${(e.timestamp || '').replace('T',' ').slice(0,19)+' UTC'}</span>
       </div>`).join('');
+  }
+
+  // SEC-SIG security panel
+  const ss = d.sec_sig || {};
+  const secEl = document.getElementById('sec-sig-panel');
+  if (ss.frequencies) {
+    const jamBadge = (s, n) => `<span class="badge ${s>=2?'badge-warning':'badge-ok'}">${n}</span>`;
+    const freqRows = (ss.frequencies || []).map(f =>
+      `<span class="badge me-1 mb-1 ${f.jammed ? 'badge-critical' : 'badge-ok'}">${f.label}</span>`
+    ).join('');
+    secEl.innerHTML = `
+      <div class="d-flex gap-3 mb-2">
+        <div class="small">Jamming ${jamBadge(ss.jamming_state, ss.jamming_state_name)}</div>
+        <div class="small">Spoofing ${jamBadge(ss.spoofing_state, ss.spoofing_state_name)}</div>
+      </div>
+      <div class="small text-muted mb-1">Monitored frequencies:</div>
+      <div>${freqRows}</div>`;
+  } else {
+    secEl.innerHTML = '<span class="text-muted small">No SEC-SIG data</span>';
+  }
+
+  // OSNMA panel
+  const os = d.osnma || {};
+  const osnmaEl = document.getElementById('osnma-panel');
+  if (os.total_gal_signals !== undefined) {
+    const authColor = os.unauthenticated > 0 ? 'status-critical' :
+                      os.authenticated > 0 ? 'status-ok' : 'text-muted';
+    const authLabel = os.unauthenticated > 0 ? 'FAILED' :
+                      os.authenticated > 0 ? 'VERIFIED' : 'UNKNOWN';
+    osnmaEl.innerHTML = `
+      <div class="d-flex align-items-baseline gap-2 mb-1">
+        <span class="metric-value" style="font-size:1.4rem" id="osnma-status-label">
+          <span class="${authColor}">${authLabel}</span>
+        </span>
+        <span class="text-muted small">${os.total_gal_signals} Galileo signals</span>
+      </div>
+      <div class="row small text-muted">
+        <div class="col"><span class="status-ok">●</span> Auth'd: ${os.authenticated}</div>
+        <div class="col"><span class="status-critical">●</span> Failed: ${os.unauthenticated}</div>
+        <div class="col"><span class="text-muted">●</span> Unknown: ${os.unknown}</div>
+      </div>
+      <div class="small text-muted mt-1" style="font-size:.7rem">
+        ${os.unauthenticated === 0 && os.authenticated === 0 ? 'Firmware update required for OSNMA verification' : ''}
+      </div>`;
+  } else {
+    osnmaEl.innerHTML = '<span class="text-muted small">No NAV-SIG data</span>';
   }
 
   // Position

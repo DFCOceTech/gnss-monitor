@@ -48,6 +48,31 @@ CREATE TABLE IF NOT EXISTS rf_metrics (
     ant_power        INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS sec_sig_metrics (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    sample_id        INTEGER REFERENCES gnss_samples(id) ON DELETE CASCADE,
+    timestamp        TEXT NOT NULL,
+    jamming_state    INTEGER,
+    spoofing_state   INTEGER,
+    jam_det_enabled  INTEGER,
+    spf_det_enabled  INTEGER,
+    frequencies_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS signal_metrics (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    sample_id   INTEGER REFERENCES gnss_samples(id) ON DELETE CASCADE,
+    timestamp   TEXT NOT NULL,
+    gnss_id     INTEGER,
+    sv_id       INTEGER,
+    sig_id      TEXT,
+    cno_dbhz    REAL,
+    quality_ind INTEGER,
+    health      INTEGER,
+    pr_used     INTEGER,
+    auth_status INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS baseline_stats (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     computed_at    TEXT NOT NULL,
@@ -71,11 +96,14 @@ CREATE TABLE IF NOT EXISTS events (
     resolved_at   TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_gnss_ts  ON gnss_samples(timestamp);
-CREATE INDEX IF NOT EXISTS idx_sat_ts   ON satellite_metrics(timestamp);
-CREATE INDEX IF NOT EXISTS idx_rf_ts    ON rf_metrics(timestamp);
-CREATE INDEX IF NOT EXISTS idx_evt_ts   ON events(timestamp);
-CREATE INDEX IF NOT EXISTS idx_evt_type ON events(event_type);
+CREATE INDEX IF NOT EXISTS idx_gnss_ts   ON gnss_samples(timestamp);
+CREATE INDEX IF NOT EXISTS idx_sat_ts    ON satellite_metrics(timestamp);
+CREATE INDEX IF NOT EXISTS idx_rf_ts     ON rf_metrics(timestamp);
+CREATE INDEX IF NOT EXISTS idx_secsig_ts ON sec_sig_metrics(timestamp);
+CREATE INDEX IF NOT EXISTS idx_sig_ts    ON signal_metrics(timestamp);
+CREATE INDEX IF NOT EXISTS idx_sig_auth  ON signal_metrics(auth_status);
+CREATE INDEX IF NOT EXISTS idx_evt_ts    ON events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_evt_type  ON events(event_type);
 """
 
 
@@ -114,6 +142,30 @@ class Storage:
             (sample_id, timestamp, gnss_id, sv_id, cn0_dbhz, elev_deg, azim_deg, quality_ind)
             VALUES (:sample_id, :timestamp, :gnss_id, :sv_id, :cn0_dbhz, :elev_deg, :azim_deg, :quality_ind)"""
         rows = [{"sample_id": sample_id, **sv} for sv in satellites]
+        with self._conn() as conn:
+            conn.executemany(sql, rows)
+
+    def insert_sec_sig_metrics(self, sample_id: int, sec_sig: dict) -> None:
+        sql = """INSERT INTO sec_sig_metrics
+            (sample_id, timestamp, jamming_state, spoofing_state, jam_det_enabled, spf_det_enabled, frequencies_json)
+            VALUES (:sample_id, :timestamp, :jamming_state, :spoofing_state, :jam_det_enabled, :spf_det_enabled, :frequencies_json)"""
+        row = {
+            "sample_id": sample_id,
+            "timestamp": sec_sig["timestamp"],
+            "jamming_state": sec_sig["jamming_state"],
+            "spoofing_state": sec_sig["spoofing_state"],
+            "jam_det_enabled": sec_sig["jam_det_enabled"],
+            "spf_det_enabled": sec_sig["spf_det_enabled"],
+            "frequencies_json": json.dumps(sec_sig.get("frequencies", [])),
+        }
+        with self._conn() as conn:
+            conn.execute(sql, row)
+
+    def insert_signal_metrics(self, sample_id: int, signals: list[dict]) -> None:
+        sql = """INSERT INTO signal_metrics
+            (sample_id, timestamp, gnss_id, sv_id, sig_id, cno_dbhz, quality_ind, health, pr_used, auth_status)
+            VALUES (:sample_id, :timestamp, :gnss_id, :sv_id, :sig_id, :cno_dbhz, :quality_ind, :health, :pr_used, :auth_status)"""
+        rows = [{"sample_id": sample_id, **s} for s in signals]
         with self._conn() as conn:
             conn.executemany(sql, rows)
 

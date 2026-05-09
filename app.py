@@ -15,8 +15,10 @@ from src.gnss_monitor.baseline import BaselineManager
 from src.gnss_monitor.collector import GNSSCollector
 from src.gnss_monitor.config import load_config
 from src.gnss_monitor.detector import (
+    AUTH_STATES,
     BAND_NAMES,
     FIX_TYPES,
+    FREQ_NAMES,
     JAMMING_STATES,
     SPOOF_STATES,
     AnomalyDetector,
@@ -66,6 +68,8 @@ def _on_sample(sample: dict) -> None:
     pvt = sample.get("pvt", {})
     satellites = sample.get("satellites", [])
     rf = sample.get("rf", [])
+    sec_sig = sample.get("sec_sig")
+    signals = sample.get("signals", [])
     ts = pvt.get("timestamp") or datetime.now(tz=timezone.utc).isoformat()
 
     sample_id = storage.insert_gnss_sample(pvt)
@@ -73,6 +77,10 @@ def _on_sample(sample: dict) -> None:
         storage.insert_satellite_metrics(sample_id, satellites)
     for band in rf:
         storage.insert_rf_metrics(band)
+    if sec_sig:
+        storage.insert_sec_sig_metrics(sample_id, sec_sig)
+    if signals:
+        storage.insert_signal_metrics(sample_id, signals)
 
     _sample_count += 1
     # Recompute baseline every 60 samples (~1 min) until established, then every 300
@@ -106,9 +114,50 @@ def _on_sample(sample: dict) -> None:
     fix_type = pvt.get("fix_type", 0)
     active_events = detector.active_events
 
-    if max_jam >= 3 or spoof >= 2 or any(e["severity"] == "critical" for e in active_events):
+    # SEC-SIG security status panel
+    sec_sig_state: dict = {}
+    if sec_sig:
+        sec_freqs = []
+        for f in sec_sig.get("frequencies", []):
+            freq_khz = f.get("freq_khz", 0)
+            sec_freqs.append({
+                "freq_mhz": f.get("freq_mhz"),
+                "label": FREQ_NAMES.get(freq_khz, f"{f.get('freq_mhz')} MHz"),
+                "jammed": f.get("jammed", 0),
+            })
+        sec_sig_state = {
+            "jamming_state": sec_sig.get("jamming_state", 0),
+            "jamming_state_name": JAMMING_STATES.get(sec_sig.get("jamming_state", 0), "Unknown"),
+            "spoofing_state": sec_sig.get("spoofing_state", 0),
+            "spoofing_state_name": SPOOF_STATES.get(sec_sig.get("spoofing_state", 0), "Unknown"),
+            "jam_det_enabled": sec_sig.get("jam_det_enabled", 0),
+            "spf_det_enabled": sec_sig.get("spf_det_enabled", 0),
+            "frequencies": sec_freqs,
+            "any_jammed": any(f.get("jammed") for f in sec_sig.get("frequencies", [])),
+        }
+
+    # OSNMA authentication summary (Galileo signals only)
+    gal_auth = [s for s in signals if s.get("gnss_id") == 2]
+    auth_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+    for s in gal_auth:
+        auth_counts[s.get("auth_status", 0)] = auth_counts.get(s.get("auth_status", 0), 0) + 1
+    osnma_state = {
+        "authenticated": auth_counts[1],
+        "unauthenticated": auth_counts[2],
+        "unknown": auth_counts[0],
+        "disabled": auth_counts[3],
+        "total_gal_signals": len(gal_auth),
+        "status": "unauthenticated" if auth_counts[2] > 0 else
+                  "authenticated" if auth_counts[1] > 0 else "unknown",
+    }
+
+    # Use SEC-SIG jamming state as authoritative when available
+    sec_jam = sec_sig.get("jamming_state", 0) if sec_sig else 0
+    effective_jam = max(max_jam, sec_jam)
+
+    if effective_jam >= 3 or spoof >= 2 or any(e["severity"] == "critical" for e in active_events):
         status = "critical"
-    elif max_jam >= 2 or active_events:
+    elif effective_jam >= 2 or active_events:
         status = "warning"
     elif fix_type < 2:
         status = "no_fix"
@@ -154,6 +203,8 @@ def _on_sample(sample: dict) -> None:
                 "count": len(cn0_vals),
             },
             "active_events": active_events,
+            "sec_sig": sec_sig_state,
+            "osnma": osnma_state,
             "history": hist_snap,
         })
 
