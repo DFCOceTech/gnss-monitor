@@ -26,6 +26,11 @@
 **Mitigation**: Allow new baseline to establish (~100 samples / ~2 min). Once stable, consider raising `detection.statistical.zscore_threshold` in `config.yaml` to 3.5–4.0 to reduce sv_drop false positives.
 **Operational note**: To reset baseline after antenna relocation: `DELETE FROM baseline_stats` in the SQLite DB. The service picks up the cleared baseline at next startup.
 
+## KI-007: OSNMA requires firmware update
+**Status**: Open
+**Description**: ZED-X20P firmware HPG 2.02 does not support Galileo OSNMA. `CFG-OSNMA` config group is unknown to ubxtool, and all NAV-SIG `authStatus` values remain 0 (unknown). The OSNMA detection pipeline and dashboard panel are fully implemented and will activate automatically once the device runs a firmware version that supports OSNMA.
+**Resolution**: Update firmware via u-blox u-center (Windows). User intends to do this. After update, re-probe SEC-SIG and NAV-SIG to confirm authStatus values.
+
 ## KI-006: systemd service requires interactive sudo for restart
 **Status**: Open
 **Description**: `sudo systemctl restart gnss-monitor` fails over non-interactive SSH (`sudo: a terminal is required`). The service can only be restarted by the user from an interactive Pi terminal session.

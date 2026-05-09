@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-05-09 — SEC-SIG, NAV-SIG, and OSNMA Pipeline (Session 2 continued)
+
+**User instruction**: Add SEC-SIG and NAV-SIG; update README and spec-anchor docs.
+
+### Added
+- `src/gnss_monitor/collector.py` — `_parse_sec_sig()`, `_parse_nav_sig()`; SEC-SIG (0x27/0x09) and NAV-SIG (0x01/0x43) added to poll list; SEC-SIG spoofingState propagated to `_current_pvt` as authoritative source
+- `src/gnss_monitor/storage.py` — `sec_sig_metrics` and `signal_metrics` tables; `insert_sec_sig_metrics()`, `insert_signal_metrics()`
+- `src/gnss_monitor/detector.py` — `FREQ_NAMES`, `AUTH_STATES` constants; `_check_osnma()` method; SEC-SIG per-frequency jammed check in `_check_jamming()`; SEC-SIG authoritative spoofing in `_check_spoofing()`
+- `app.py` — `sec_sig_state` and `osnma_state` built per sample; both pushed in WebSocket state dict
+- `templates/dashboard.html` — SEC-SIG security panel (frequency badge grid); OSNMA authentication status panel
+
+### Investigation findings
+- SEC-SIG supported on ZED-X20P HPG 2.02: jammingState, spoofingState, 7 monitored frequencies
+- NAV-SIG supported: 116 signals, authStatus field present but all 0 (unknown)
+- OSNMA NOT supported in HPG 2.02 — `CFG-OSNMA` unknown; firmware update required (KI-007)
+- GLONASS not supported on this hardware variant — `CFG-SIGNAL-GLO_ENA` NACKs on write (confirmed via MON-VER: GPS;GAL;BDS only)
+- ZED-X20P protocol version is 50.10, not 18.00
+
+---
+
 ## 2026-05-09 — Dashboard Live, Collector Fully Debugged (Session 2 continued)
 
 **User instruction**: Get dashboard working; antenna moved to new location; update docs.

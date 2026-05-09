@@ -1,6 +1,6 @@
 # Anomaly Detection — Specification
 
-> Version: 1.1 | Status: Implemented | Last updated: 2026-05-09
+> Version: 1.2 | Status: Implemented | Last updated: 2026-05-09
 
 ## Purpose
 
@@ -12,10 +12,13 @@ Detect GNSS signal anomalies (jamming, spoofing, multipath/degradation) using tw
 The system SHALL compute a baseline of normal signal characteristics (C/N0 mean, satellite count, AGC, noise) from a configurable rolling time window (default 1 h, minimum 100 samples, maximum 24 h).
 
 ### REQ-DET-002: Threshold Jamming Detection
-The system SHALL detect jamming when MON-RF jammingState ≥ configured warn level (default 2) OR jamInd ≥ configured threshold (default 80), per RF band.
+The system SHALL detect jamming when: (a) MON-RF jammingState ≥ configured warn level (default 2) OR jamInd ≥ configured threshold (default 80), per RF band; OR (b) SEC-SIG reports `jammed=1` on any monitored center frequency.
 
 ### REQ-DET-003: Threshold Spoofing Detection
-The system SHALL detect spoofing when NAV-PVT/NAV-STATUS spoofDetState ≥ configured warn level (default 2).
+The system SHALL detect spoofing when SEC-SIG `spoofingState` ≥ configured warn level (default 2). SEC-SIG is the authoritative spoofing source; NAV-STATUS `spoofDetState` is used as fallback when SEC-SIG is unavailable.
+
+### REQ-DET-009: OSNMA Authentication Detection
+The system SHALL detect spoofing when any Galileo signal reports `authStatus=2` (unauthenticated) in NAV-SIG. This event SHALL have severity=critical. When firmware does not support OSNMA, all authStatus values will be 0 (unknown) and no events will fire.
 
 ### REQ-DET-004: Statistical Detection
 The system SHALL detect anomalies when any monitored metric deviates from baseline by more than `zscore_threshold` standard deviations (default 3.0).
@@ -56,9 +59,10 @@ The user SHALL be able to set the baseline duration via the dashboard (0.25–24
 ### What's Built
 - `src/gnss_monitor/detector.py` — AnomalyDetector with _AlertTracker for deduplication
 - `src/gnss_monitor/baseline.py` — BaselineManager with rolling window from SQLite
-- Threshold checks: _check_jamming(), _check_spoofing()
-- Statistical checks: _check_statistical() covering num_sv, cn0_mean, AGC per band
+- Threshold checks: `_check_jamming()` (MON-RF + SEC-SIG per-frequency), `_check_spoofing()` (SEC-SIG authoritative), `_check_osnma()` (NAV-SIG authStatus)
+- Statistical checks: `_check_statistical()` covering num_sv, cn0_mean, AGC per band
 - Uniform C/N0 rise spoofing heuristic (statistical)
+- `FREQ_NAMES` dict mapping SEC-SIG center frequencies (kHz) to human-readable band labels
 
 ### Observed Behaviour (baseline from ~600 samples, 2026-05-07)
 - numSV baseline: mean=24.30, std=0.809

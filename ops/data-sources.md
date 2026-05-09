@@ -18,12 +18,15 @@
   | NAV-SAT | 0x01 | 0x35 | Per-satellite C/N0, elevation, azimuth |
   | NAV-STATUS | 0x01 | 0x03 | Fix status (backup spoofDetState) |
   | MON-RF | 0x0A | 0x38 | Per-band jamming state, AGC, noise |
+  | SEC-SIG | 0x27 | 0x09 | Hardware jamming/spoofing state; per-frequency jammed flags (7 freqs) |
+  | NAV-SIG | 0x01 | 0x43 | Per-signal C/N0, health, usage, OSNMA authStatus |
 
 ## Storage
 
 - **Database**: SQLite 3, WAL mode
 - **Path**: `/home/obs-pi-01/gnss-monitor/data/gnss_monitor.db`
 - **Retention**: 90 days (configurable via `storage.retain_days`)
+- **Tables**: gnss_samples, satellite_metrics, rf_metrics, sec_sig_metrics, signal_metrics, baseline_stats, events
 
 ## No External APIs
 

@@ -17,17 +17,25 @@ Real-time GNSS quality and threat monitor for the u-blox ZED-X20P, running on a 
 ## What It Monitors
 
 - **Fix quality** — fix type (no fix / 2D / 3D / RTK), satellite count, horizontal accuracy, pDOP
-- **Per-satellite signal** — C/N₀, elevation, azimuth, quality indicator for all tracked SVs
+- **Per-satellite signal** — C/N₀, elevation, azimuth, quality indicator for all tracked SVs (NAV-SAT)
+- **Per-signal detail** — per-signal C/N₀, health, usage flags, OSNMA auth status (NAV-SIG)
 - **RF bands** — per-band jamming state, AGC count, noise floor, jamming indicator (MON-RF)
-- **Spoofing state** — hardware spoofing detection flag from NAV-STATUS
+- **Per-frequency security** — hardware jamming/spoofing state + per-frequency jammed flags across 7 frequencies: GPS L1/L2/L5, GAL E1/E5a/E5b/E6, BDS B2, GLO L1 (SEC-SIG)
+- **OSNMA readiness** — Galileo signal authentication status field populated; cryptographic verification activates automatically after firmware update to a version supporting OSNMA
 
 ## Detection
 
-Two complementary layers run on every sample:
+Three complementary layers run on every sample:
 
-**Hardware thresholds** (immediate, no baseline required):
-- Jamming: MON-RF `jammingState ≥ 2` or `jamInd ≥ 80` on any band
-- Spoofing: `spoofDetState ≥ 2` from NAV-STATUS
+**Hardware thresholds — MON-RF** (immediate, no baseline required):
+- Jamming: `jammingState ≥ 2` or `jamInd ≥ 80` on any RF band
+
+**Hardware thresholds — SEC-SIG** (immediate, no baseline required):
+- Jamming: per-frequency `jammed=1` on any of 7 monitored frequencies
+- Spoofing: `spoofingState ≥ 2` (authoritative source, overrides NAV-STATUS)
+
+**OSNMA** (cryptographic, requires firmware update):
+- `authStatus=2` (unauthenticated) on any Galileo signal → critical spoofing event
 
 **Statistical z-score** (requires baseline):
 - Satellite count drop
@@ -45,6 +53,8 @@ Live web UI at `http://<pi-ip>:5000` — pushed via WebSocket at ~1 Hz.
 - RF band cards (L1, L2/L5, E5a) with AGC, noise, jamming indicator
 - Spoofing detection state
 - 2-minute rolling charts: C/N₀ mean, satellite count, L1 AGC, L1 jamming indicator
+- **SEC-SIG security panel** — hardware jamming/spoofing state + badge grid of 7 monitored frequencies (red = jammed)
+- **OSNMA panel** — Galileo signal authentication count (authenticated / unauthenticated / unknown); updates automatically once firmware supports OSNMA
 - Active alert banner
 - Historical events page (`/events`) with type filter and timeline chart
 - Baseline control (set duration 0.25–24 h)
@@ -56,12 +66,13 @@ ZED-X20P (/dev/ttyACM0)
     │  UBX binary, polling mode (~0.9 Hz)
     ▼
 GNSSCollector thread
-    │  Polls NAV-PVT, NAV-SAT, NAV-STATUS, MON-RF
+    │  Polls NAV-PVT, NAV-SAT, NAV-STATUS, MON-RF, SEC-SIG, NAV-SIG
     │  Collects response bytes for 1.1 s per cycle
     │  (NAV-PVT response deferred to next 1 Hz nav epoch)
     ▼
 on_sample() callback
-    ├── SQLite (gnss_samples, satellite_metrics, rf_metrics, events)
+    ├── SQLite (gnss_samples, satellite_metrics, rf_metrics,
+    │           sec_sig_metrics, signal_metrics, events)
     ├── BaselineManager — rolling window mean/std
     ├── AnomalyDetector — threshold + statistical checks
     └── In-memory state + 2-min history ring buffer
@@ -129,3 +140,4 @@ journalctl -u gnss-monitor -f
 - After relocating the antenna, clear the baseline: `DELETE FROM baseline_stats` in the SQLite DB and restart the service.
 - Use `-P 50.10` (not `-P 18.00`) when running `ubxtool` against this device.
 - QZSS is supported by the hardware but disabled — not visible at 53.5°N.
+- OSNMA verification requires a firmware update. The OSNMA dashboard panel is already wired up — it will activate automatically once the device reports `authStatus=1` on Galileo signals.

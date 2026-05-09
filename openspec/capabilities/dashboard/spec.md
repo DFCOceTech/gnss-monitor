@@ -1,6 +1,6 @@
 # Dashboard — Specification
 
-> Version: 1.1 | Status: Implemented — E2E verification pending service restart | Last updated: 2026-05-09
+> Version: 1.2 | Status: Implemented and E2E verified | Last updated: 2026-05-09
 
 ## Purpose
 
@@ -26,13 +26,19 @@ Each event in the history view SHALL be expandable to show: timestamp, type, sev
 ### REQ-DASH-006: Baseline Control
 The dashboard SHALL allow the user to set the baseline duration (0.25–24 h) and display baseline status (collecting / established + sample count).
 
+### REQ-DASH-007: SEC-SIG Security Panel
+The dashboard SHALL display a security panel showing: SEC-SIG overall jammingState and spoofingState, and a frequency badge grid for all monitored center frequencies indicating jammed/clear status per frequency.
+
+### REQ-DASH-008: OSNMA Authentication Panel
+The dashboard SHALL display a Galileo OSNMA authentication panel showing counts of authenticated, unauthenticated, and unknown signals. When firmware does not support OSNMA, the panel SHALL indicate "Firmware update required" rather than showing zero counts as a failure.
+
 ## Implementation Status (2026-05-09)
 
 **Status**: Implemented and E2E verified (2026-05-09)
 
 ### What's Built
-- `app.py` — Flask routes + Flask-SocketIO; background emitter at 1 Hz
-- `templates/dashboard.html` — Bootstrap 5 dark, Plotly.js, Socket.IO client
+- `app.py` — Flask routes + Flask-SocketIO; background emitter at 1 Hz; `sec_sig` and `osnma` state fields
+- `templates/dashboard.html` — Bootstrap 5 dark, Plotly.js, Socket.IO client; SEC-SIG and OSNMA panels
 - `templates/events.html` — Table + timeline chart, detail modal
 - `/api/state`, `/api/events`, `/api/history`, `/api/baseline/duration` REST endpoints
 
