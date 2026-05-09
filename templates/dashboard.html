@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — GNSS Monitor{% endblock %}
+
+{% block content %}
+<!-- Status Banner -->
+<div class="d-flex align-items-center mb-3 gap-3">
+  <span class="pulse-dot" id="live-dot"></span>
+  <h4 class="mb-0 fw-bold" id="status-label">Connecting…</h4>
+  <span class="ms-auto text-muted small" id="last-ts">—</span>
+</div>
+
+<!-- Active Alerts -->
+<div id="alert-panel" class="mb-3"></div>
+
+<!-- Key Metric Cards -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card metric-card h-100 p-3">
+      <div class="metric-label">Fix Type</div>
+      <div class="metric-value" id="fix-type">—</div>
+      <small class="text-muted" id="num-sv">— satellites</small>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card metric-card h-100 p-3">
+      <div class="metric-label">Position Accuracy</div>
+      <div class="metric-value" id="h-acc">— m</div>
+      <small class="text-muted">Horizontal (95%)</small>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card metric-card h-100 p-3">
+      <div class="metric-label">C/N₀ Mean</div>
+      <div class="metric-value" id="cn0-mean">— dBHz</div>
+      <small class="text-muted" id="cn0-range">—</small>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card metric-card h-100 p-3">
+      <div class="metric-label">Spoofing State</div>
+      <div class="metric-value small" id="spoof-state">—</div>
+      <small class="text-muted" id="baseline-status">Baseline: collecting…</small>
+    </div>
+  </div>
+</div>
+
+<!-- RF Bands -->
+<div class="row g-3 mb-3">
+  <div class="col-12">
+    <div class="card metric-card p-3">
+      <div class="metric-label mb-2">RF Bands — Jamming / AGC / Noise</div>
+      <div id="rf-bands" class="row g-2"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="card metric-card p-3">
+      <div class="metric-label mb-2">C/N₀ Mean over Time</div>
+      <div id="chart-cn0" style="height:200px"></div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card metric-card p-3">
+      <div class="metric-label mb-2">Satellites Tracked</div>
+      <div id="chart-sv" style="height:200px"></div>
+    </div>
+  </div>
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="card metric-card p-3">
+      <div class="metric-label mb-2">AGC Count — L1 Band</div>
+      <div id="chart-agc" style="height:200px"></div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card metric-card p-3">
+      <div class="metric-label mb-2">Jamming Indicator — L1 Band</div>
+      <div id="chart-jam" style="height:200px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Position + Baseline Controls -->
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card metric-card p-3">
+      <div class="metric-label mb-2">Position</div>
+      <div class="font-monospace small" id="position">—</div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card metric-card p-3">
+      <div class="metric-label mb-2">Baseline Settings</div>
+      <div class="d-flex align-items-center gap-2">
+        <label class="small text-muted">Duration (hours):</label>
+        <input type="number" id="bl-hours" class="form-control form-control-sm" style="width:80px" value="1" min="0.25" max="24" step="0.25">
+        <button class="btn btn-sm btn-outline-secondary" onclick="setBaseline()">Apply</button>
+        <span class="small text-muted" id="bl-info">—</span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const socket = io();
+let chartsInit = false;
+const PLOT_LAYOUT = {
+  paper_bgcolor: 'rgba(0,0,0,0)',
+  plot_bgcolor: 'rgba(0,0,0,0)',
+  margin: {t:5, b:35, l:45, r:10},
+  font: {color: '#8b949e', size: 11},
+  xaxis: {gridcolor:'#21262d', tickformat:'%H:%M:%S', type:'date'},
+  yaxis: {gridcolor:'#21262d'},
+  showlegend: false,
+};
+const PLOT_CONFIG = {displayModeBar: false, responsive: true};
+
+function initCharts(ts, d) {
+  const line = (color) => ({type:'scatter', mode:'lines', line:{color, width:1.5}});
+  Plotly.newPlot('chart-cn0', [{...line('#3fb950'), x:ts, y:d.cn0_mean}], {...PLOT_LAYOUT, yaxis:{...PLOT_LAYOUT.yaxis, title:'dBHz'}}, PLOT_CONFIG);
+  Plotly.newPlot('chart-sv',  [{...line('#58a6ff'), x:ts, y:d.num_sv}],   {...PLOT_LAYOUT, yaxis:{...PLOT_LAYOUT.yaxis, title:'SVs'}}, PLOT_CONFIG);
+  Plotly.newPlot('chart-agc', [{...line('#d29922'), x:ts, y:d.agc_band0}],{...PLOT_LAYOUT, yaxis:{...PLOT_LAYOUT.yaxis, title:'AGC'}}, PLOT_CONFIG);
+  Plotly.newPlot('chart-jam', [{...line('#f85149'), x:ts, y:d.jam_ind_band0}],{...PLOT_LAYOUT, yaxis:{...PLOT_LAYOUT.yaxis, title:'0–255', range:[0,255]}}, PLOT_CONFIG);
+  chartsInit = true;
+}
+
+function updateCharts(ts, d) {
+  const pairs = [
+    ['chart-cn0', d.cn0_mean],
+    ['chart-sv',  d.num_sv],
+    ['chart-agc', d.agc_band0],
+    ['chart-jam', d.jam_ind_band0],
+  ];
+  pairs.forEach(([id, y]) => {
+    Plotly.react(id, [{...document.getElementById(id).data[0], x:ts, y}], document.getElementById(id).layout, PLOT_CONFIG);
+  });
+}
+
+function statusClass(s) {
+  return `status-${s}`;
+}
+
+function bandBorderClass(jam) {
+  if (jam >= 3) return 'band-critical';
+  if (jam >= 2) return 'band-warning';
+  return 'band-ok';
+}
+
+function eventBorderClass(type) {
+  return `event-${type}`;
+}
+
+socket.on('update', (d) => {
+  // Status banner
+  const sl = document.getElementById('status-label');
+  sl.textContent = d.status === 'ok' ? 'All Clear' :
+                   d.status === 'warning' ? 'Warning' :
+                   d.status === 'critical' ? 'Critical Alert' :
+                   d.status === 'no_fix' ? 'No Fix' :
+                   d.status === 'error' ? `Error: ${d.error}` : d.status;
+  sl.className = statusClass(d.status);
+  document.getElementById('last-ts').textContent = d.timestamp ? d.timestamp.replace('T',' ').slice(0,19)+' UTC' : '—';
+
+  // Metric cards
+  document.getElementById('fix-type').textContent = d.fix_type_name || '—';
+  document.getElementById('num-sv').textContent = `${d.num_sv ?? '—'} satellites`;
+  document.getElementById('h-acc').textContent = d.h_acc_m != null ? `${d.h_acc_m.toFixed(2)} m` : '—';
+
+  const cn0 = d.cn0_stats || {};
+  document.getElementById('cn0-mean').textContent = cn0.mean != null ? `${cn0.mean} dBHz` : '—';
+  document.getElementById('cn0-range').textContent = cn0.min != null ? `${cn0.min}–${cn0.max} dBHz (${cn0.count} SVs)` : '—';
+
+  const spoof = d.spoof_det_name || '—';
+  document.getElementById('spoof-state').textContent = spoof;
+  document.getElementById('spoof-state').className = `metric-value small ${d.spoof_det_state >= 2 ? 'status-critical' : 'status-ok'}`;
+
+  const blEl = document.getElementById('baseline-status');
+  if (d.baseline_established) {
+    blEl.textContent = `Baseline OK (${d.baseline_samples} samples)`;
+    blEl.className = 'text-muted';
+  } else {
+    blEl.textContent = `Collecting baseline… (${d.baseline_samples || 0} samples)`;
+    blEl.className = 'text-warning small';
+  }
+  document.getElementById('bl-info').textContent = d.baseline_established ? `✓ ${d.baseline_hours}h window` : 'not ready';
+
+  // RF Bands
+  const rfEl = document.getElementById('rf-bands');
+  rfEl.innerHTML = (d.rf_bands || []).map(b => `
+    <div class="col-md-4">
+      <div class="card p-2 ${bandBorderClass(b.jamming_state)}" style="background:#0d1117">
+        <div class="d-flex justify-content-between">
+          <strong>${b.label}</strong>
+          <span class="badge ${b.jamming_state >= 2 ? 'badge-warning' : 'badge-ok'}">${b.jamming_state_name}</span>
+        </div>
+        <div class="row mt-1 small text-muted">
+          <div class="col">AGC <span class="text-light">${b.agc_cnt}</span></div>
+          <div class="col">Noise <span class="text-light">${b.noise_per_ms}</span></div>
+          <div class="col">JamInd <span class="${b.jam_indicator >= 80 ? 'text-warning' : 'text-light'}">${b.jam_indicator}</span></div>
+        </div>
+      </div>
+    </div>`).join('');
+
+  // Active alerts
+  const alertEl = document.getElementById('alert-panel');
+  if ((d.active_events || []).length === 0) {
+    alertEl.innerHTML = '';
+  } else {
+    alertEl.innerHTML = d.active_events.map(e => `
+      <div class="alert alert-dark border-0 py-2 mb-2 ${eventBorderClass(e.event_type)}" role="alert">
+        <strong class="${e.severity === 'critical' ? 'text-danger' : 'text-warning'}">
+          ${e.event_type.toUpperCase()} ${e.severity === 'critical' ? '🔴' : '🟡'}
+        </strong> — ${e.attribution}
+        <span class="ms-2 small text-muted">${(e.timestamp || '').replace('T',' ').slice(0,19)+' UTC'}</span>
+      </div>`).join('');
+  }
+
+  // Position
+  document.getElementById('position').innerHTML =
+    d.lat != null ? `Lat: ${d.lat.toFixed(7)}°<br>Lon: ${d.lon.toFixed(7)}°<br>Alt: ${d.alt_m} m` : '—';
+
+  // Charts
+  if (d.history && d.history.timestamps && d.history.timestamps.length > 0) {
+    const ts = d.history.timestamps;
+    if (!chartsInit) initCharts(ts, d.history);
+    else updateCharts(ts, d.history);
+  }
+});
+
+socket.on('baseline_updated', (d) => {
+  document.getElementById('bl-info').textContent = d.established ? `✓ ${d.hours}h window` : `${d.hours}h (collecting…)`;
+});
+
+function setBaseline() {
+  const h = parseFloat(document.getElementById('bl-hours').value) || 1;
+  socket.emit('set_baseline_duration', {hours: h});
+}
+</script>
+{% endblock %}

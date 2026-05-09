@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}GNSS Monitor{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <style>
+    body { background: #0d1117; }
+    .navbar-brand { font-family: monospace; letter-spacing: .05em; }
+    .status-ok       { color: #3fb950; }
+    .status-warning  { color: #d29922; }
+    .status-critical { color: #f85149; }
+    .status-no_fix   { color: #8b949e; }
+    .status-error    { color: #f85149; }
+    .status-starting { color: #8b949e; }
+    .badge-ok       { background: #1a3a26 !important; color: #3fb950; }
+    .badge-warning  { background: #3a2a00 !important; color: #d29922; }
+    .badge-critical { background: #3a1a1a !important; color: #f85149; }
+    .metric-card { background: #161b22; border: 1px solid #30363d; }
+    .metric-value { font-size: 2rem; font-weight: 700; font-family: monospace; }
+    .metric-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .1em; color: #8b949e; }
+    .band-ok       { border-left: 4px solid #3fb950; }
+    .band-warning  { border-left: 4px solid #d29922; }
+    .band-critical { border-left: 4px solid #f85149; }
+    .event-jamming  { border-left: 4px solid #d29922; }
+    .event-spoofing { border-left: 4px solid #f85149; }
+    .event-signal_degradation { border-left: 4px solid #8b949e; }
+    .pulse-dot {
+      display: inline-block; width: 10px; height: 10px;
+      border-radius: 50%; background: #3fb950;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: .3; }
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark" style="background:#161b22; border-bottom:1px solid #30363d;">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="/">
+      <i class="bi bi-reception-4 me-2"></i>GNSS Monitor
+    </a>
+    <div class="navbar-nav ms-auto">
+      <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="/">Dashboard</a>
+      <a class="nav-link {% if request.path == '/events' %}active{% endif %}" href="/events">Events</a>
+    </div>
+  </div>
+</nav>
+<div class="container-fluid py-3">
+  {% block content %}{% endblock %}
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

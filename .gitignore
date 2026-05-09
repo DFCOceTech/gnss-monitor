@@ -1,0 +1,41 @@
+# Secrets & credentials
+.env
+.env.*
+*.pem
+*.key
+rpi_setup.txt
+
+# Runtime data — stays on Pi, never committed
+data/
+logs/
+*.db
+*.sqlite3
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environments
+.conda/
+.venv/
+venv/
+env/
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Claude local settings
+.claude/
+
+# Template — not part of this project's source
+spec-anchor-py/

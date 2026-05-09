@@ -1,0 +1,31 @@
+device:
+  port: /dev/ttyACM0
+  baud_rate: 115200
+
+baseline:
+  duration_hours: 1.0
+  min_samples: 100
+
+detection:
+  threshold:
+    jamming_state_warn: 2       # 0=unknown 1=ok 2=warning 3=critical
+    spoof_det_state_warn: 2     # 0=unknown 1=no_spoof 2=spoofing 3=multi-loc
+    jam_indicator_warn: 80      # 0–255
+    cn0_drop_db: 6.0
+    num_sv_min: 4
+  statistical:
+    zscore_threshold: 3.0
+    min_baseline_samples: 60
+
+storage:
+  db_path: /home/obs-pi-01/gnss-monitor/data/gnss_monitor.db
+  retain_days: 90
+
+web:
+  host: 0.0.0.0
+  port: 5000
+  debug: false
+
+logging:
+  level: INFO
+  log_file: /home/obs-pi-01/gnss-monitor/logs/gnss_monitor.log

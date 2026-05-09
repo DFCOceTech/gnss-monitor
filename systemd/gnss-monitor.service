@@ -1,0 +1,25 @@
+[Unit]
+Description=GNSS Monitor — ZED-X20P quality and spoofing/jamming detection
+After=network.target
+Conflicts=gpsd.service
+
+[Service]
+Type=simple
+User=obs-pi-01
+Group=obs-pi-01
+WorkingDirectory=/home/obs-pi-01/gnss-monitor
+Environment=HOME=/home/obs-pi-01
+Environment=PYTHONPATH=/home/obs-pi-01/.local/lib/python3.13/site-packages
+EnvironmentFile=-/home/obs-pi-01/gnss-monitor/.env
+ExecStart=/usr/bin/python3 /home/obs-pi-01/gnss-monitor/app.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gnss-monitor
+
+# Allow access to serial device
+SupplementaryGroups=dialout
+
+[Install]
+WantedBy=multi-user.target

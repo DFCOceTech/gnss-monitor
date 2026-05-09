@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Events — GNSS Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3 gap-3">
+  <h4 class="mb-0 fw-bold">Event History</h4>
+  <a href="/" class="btn btn-sm btn-outline-secondary ms-auto">← Live Dashboard</a>
+</div>
+
+<!-- Filters -->
+<div class="card metric-card p-3 mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-auto">
+      <label class="small text-muted d-block">Type</label>
+      <select id="filter-type" class="form-select form-select-sm" style="width:160px">
+        <option value="">All types</option>
+        <option value="jamming">Jamming</option>
+        <option value="spoofing">Spoofing</option>
+        <option value="signal_degradation">Signal Degradation</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="small text-muted d-block">Limit</label>
+      <select id="filter-limit" class="form-select form-select-sm" style="width:100px">
+        <option value="50">50</option>
+        <option value="100" selected>100</option>
+        <option value="500">500</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-sm btn-outline-primary" onclick="loadEvents()">Refresh</button>
+    </div>
+    <div class="col-auto ms-auto">
+      <span class="small text-muted" id="event-count">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- Summary Chart -->
+<div class="card metric-card p-3 mb-3">
+  <div class="metric-label mb-2">Events Over Time</div>
+  <div id="chart-timeline" style="height:120px"></div>
+</div>
+
+<!-- Events Table -->
+<div class="card metric-card">
+  <div class="table-responsive">
+    <table class="table table-dark table-hover table-sm mb-0">
+      <thead style="background:#161b22; position:sticky; top:0">
+        <tr>
+          <th>Timestamp (UTC)</th>
+          <th>Type</th>
+          <th>Severity</th>
+          <th>Attribution</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="events-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal fade" id="event-modal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:#161b22; border:1px solid #30363d">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title" id="modal-title">Event Detail</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body font-monospace small" id="modal-body"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PLOT_LAYOUT = {
+  paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+  margin:{t:5,b:30,l:40,r:10}, font:{color:'#8b949e',size:10},
+  xaxis:{gridcolor:'#21262d', tickformat:'%Y-%m-%d', type:'date'},
+  yaxis:{gridcolor:'#21262d', title:'Count'},
+  showlegend:false,
+};
+
+const TYPE_COLOR = {jamming:'#d29922', spoofing:'#f85149', signal_degradation:'#8b949e'};
+const modal = new bootstrap.Modal(document.getElementById('event-modal'));
+let allEvents = [];
+
+async function loadEvents() {
+  const type = document.getElementById('filter-type').value;
+  const limit = document.getElementById('filter-limit').value;
+  const url = `/api/events?limit=${limit}${type ? '&type='+type : ''}`;
+  const res = await fetch(url);
+  allEvents = await res.json();
+  renderTable(allEvents);
+  renderTimeline(allEvents);
+  document.getElementById('event-count').textContent = `${allEvents.length} events`;
+}
+
+function renderTable(events) {
+  const tbody = document.getElementById('events-tbody');
+  if (!events.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No events</td></tr>';
+    return;
+  }
+  tbody.innerHTML = events.map(e => {
+    const color = TYPE_COLOR[e.event_type] || '#8b949e';
+    const sev = e.severity === 'critical' ? '<span class="text-danger">critical</span>' : '<span class="text-warning">warning</span>';
+    const ts = (e.timestamp || '').replace('T',' ').slice(0,19);
+    return `<tr style="border-left:3px solid ${color}; cursor:pointer" onclick="showDetail(${e.id})">
+      <td class="text-muted small">${ts}</td>
+      <td><span class="fw-bold" style="color:${color}">${e.event_type}</span></td>
+      <td>${sev}</td>
+      <td class="small">${e.attribution || '—'}</td>
+      <td><i class="bi bi-chevron-right text-muted"></i></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderTimeline(events) {
+  if (!events.length) return;
+  // Bucket by day and type
+  const buckets = {};
+  events.forEach(e => {
+    const day = (e.timestamp || '').slice(0,10);
+    if (!day) return;
+    if (!buckets[day]) buckets[day] = {jamming:0, spoofing:0, signal_degradation:0};
+    buckets[day][e.event_type] = (buckets[day][e.event_type] || 0) + 1;
+  });
+  const days = Object.keys(buckets).sort();
+  const traces = ['jamming','spoofing','signal_degradation'].map(t => ({
+    x: days,
+    y: days.map(d => buckets[d][t] || 0),
+    type: 'bar',
+    name: t,
+    marker: {color: TYPE_COLOR[t]},
+  }));
+  Plotly.newPlot('chart-timeline', traces, {...PLOT_LAYOUT, barmode:'stack'}, {displayModeBar:false, responsive:true});
+}
+
+function showDetail(id) {
+  const e = allEvents.find(x => x.id === id);
+  if (!e) return;
+  document.getElementById('modal-title').textContent = `${e.event_type.toUpperCase()} — ${(e.timestamp||'').replace('T',' ').slice(0,19)} UTC`;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="mb-2"><span class="text-muted">Severity:</span> ${e.severity}</div>
+    <div class="mb-2"><span class="text-muted">Attribution:</span> ${e.attribution || '—'}</div>
+    <div class="mb-2"><span class="text-muted">Details:</span> ${e.details || '—'}</div>
+    <div class="mt-3 text-muted">Metrics at time of event:</div>
+    <pre class="mt-1 p-2" style="background:#0d1117; border-radius:4px">${JSON.stringify(e.metric_values, null, 2)}</pre>
+  `;
+  modal.show();
+}
+
+loadEvents();
+</script>
+{% endblock %}
