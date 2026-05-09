@@ -13,13 +13,19 @@ rsync -avz --delete \
   --exclude '.DS_Store' \
   --exclude 'data/' \
   --exclude 'logs/' \
+  --exclude '*.db' \
+  --exclude '*.log' \
+  --exclude '.env' \
+  --exclude '.env.*' \
+  --exclude 'rpi_setup.txt' \
+  --exclude '.claude/' \
+  --exclude '.git/' \
   --exclude '_bmad/' \
   --exclude 'openspec/' \
   --exclude 'epics/' \
   --exclude 'ops/' \
   --exclude 'tests/' \
   --exclude 'spec-anchor-py/' \
-  --exclude '.git/' \
   "${LOCAL_DIR}/" "${PI_HOST}:${PI_DIR}/"
 
 echo "→ Creating runtime directories"
