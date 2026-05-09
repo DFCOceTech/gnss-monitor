@@ -1,5 +1,7 @@
 # GNSS Monitor
 
+![GNSS Monitor Dashboard](dashboard.png)
+
 Real-time GNSS quality and threat monitor for the u-blox ZED-X20P, running on a Raspberry Pi 4. Detects jamming and spoofing using hardware threshold checks and statistical anomaly detection against a rolling baseline. Serves a live web dashboard.
 
 ## Hardware
